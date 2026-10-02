@@ -1,0 +1,60 @@
+version: '3.8'
+
+services:
+  jaeger:
+    image: jaegertracing/all-in-one:1.55
+    container_name: jaeger
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    ports:
+      - "16686:16686" # Web UI
+      - "4317:4317"   # OTLP gRPC
+      - "4318:4318"   # OTLP HTTP
+    networks:
+      - otel-net
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: postgres
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: orders_db
+    ports:
+      - "5432:5432"
+    networks:
+      - otel-net
+
+  payment-service:
+    build: ./payment-service
+    container_name: payment-service
+    environment:
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4318
+      - OTEL_SERVICE_NAME=payment-service
+    ports:
+      - "8082:8082"
+    depends_on:
+      - jaeger
+    networks:
+      - otel-net
+
+  order-service:
+    build: ./order-service
+    container_name: order-service
+    environment:
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4318
+      - OTEL_SERVICE_NAME=order-service
+      - PAYMENT_SERVICE_URL=http://payment-service:8082
+      - DB_URL=postgresql://user:password@postgres:5432/orders_db
+    ports:
+      - "8081:8081"
+    depends_on:
+      - jaeger
+      - postgres
+      - payment-service
+    networks:
+      - otel-net
+
+networks:
+  otel-net:
+    driver: bridge
